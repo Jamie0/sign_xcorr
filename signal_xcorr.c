@@ -35,7 +35,6 @@ const int sampling_hz=8000;
 int debug = 0;
 
 FILE* open_file (char *fn) {
-	printf("[%s][%s]\n", __FUNCTION__, fn);
 	FILE *ref = fopen(fn, "r");
 	if (!ref) return NULL;
 	return ref;
@@ -93,57 +92,57 @@ float do_kissfft_xcorr (int nfft, char *fn, char *fn_ref, int *lag) {
 	if (!f) return 0.0;
 	int y=0;
 	int st = 1500;
-		// read the degraded samples
-		int x = 0;
-		int16_t sample;
-		int32_t sum = 0;
-		while (fread(&sample, sizeof(int16_t), 1, f) > 0 ) {
-			rbuf_deg[x] = (float)sample;
-			sum += (sample*sample);
+	// read the degraded samples
+	int x = 0;
+	int16_t sample;
+	int32_t sum = 0;
+	while (fread(&sample, sizeof(int16_t), 1, f) > 0 ) {
+		rbuf_deg[x] = (float)sample;
+		sum += (sample*sample);
+		x++;
+		if (x == nfft) break;
+	}
+	if (x != nfft) {
+		// fprintf(stderr, "read error[%d][%d]\n", x, nfft);
+		while(x!=nfft) {
+			rbuf_deg[x] = 0.0;
 			x++;
-			if (x == nfft) break;
 		}
-		if (x != nfft) {
-			printf("read error[%d][%d]\n", x, nfft);
-			while(x!=nfft) {
-				rbuf_deg[x] = 0.0;
-				x++;
-			}
-		}
-		// read the reference samples
-		x =0;
-		y = 0;
-		while (fread(&sample, sizeof(int16_t), 1, f_ref) > 0 ) {
-			rbuf_ref[x] = (float)sample;
+	}
+	// read the reference samples
+	x =0;
+	y = 0;
+	while (fread(&sample, sizeof(int16_t), 1, f_ref) > 0 ) {
+		rbuf_ref[x] = (float)sample;
+		x++;
+		if (x == nfft) break;
+	}
+	if (x != nfft) {
+		// fprintf(stderr, "read error[%d][%d]\n", x, nfft);
+		while(x!=nfft) {
+			rbuf_ref[x] = 0.0;
 			x++;
-			if (x == nfft) break;
 		}
-		if (x != nfft) {
-			printf("read error[%d][%d]\n", x, nfft);
-			while(x!=nfft) {
-				rbuf_ref[x] = 0.0;
-				x++;
-			}
-		}
-		kiss_fftr(fft_cfg, rbuf_deg, cbuf_deg);
-		kiss_fftr(fft_cfg, rbuf_ref, cbuf_ref);
+	}
+	kiss_fftr(fft_cfg, rbuf_deg, cbuf_deg);
+	kiss_fftr(fft_cfg, rbuf_ref, cbuf_ref);
 
-		for (x=0;x<nfft;x++) {
-			cbuf_ref[x].i = -cbuf_ref[x].i; // complex conjugate
-			C_MUL(cbuf_res[x], cbuf_deg[x], cbuf_ref[x]);
-			//printf ("kssfft [%d]xcorr[%f]\n", x, cbuf_res[x].r);
-		}
+	for (x=0;x<nfft;x++) {
+		cbuf_ref[x].i = -cbuf_ref[x].i; // complex conjugate
+		C_MUL(cbuf_res[x], cbuf_deg[x], cbuf_ref[x]);
+		//printf ("kssfft [%d]xcorr[%f]\n", x, cbuf_res[x].r);
+	}
 
-		kiss_fftri(ffti_cfg, cbuf_res, rbuf_res);
+	kiss_fftri(ffti_cfg, cbuf_res, rbuf_res);
 
-		float max_corr = 0;
-		for (x=0;x<nfft;x++) {
-			if (max_corr < rbuf_res[x]) {
-				max_corr = rbuf_res[x];
-				*lag = x;
-			}
+	float max_corr = 0;
+	for (x=0;x<nfft;x++) {
+		if (max_corr < rbuf_res[x]) {
+			max_corr = rbuf_res[x];
+			*lag = x;
 		}
-		printf("max xcorr[%.0f] sample[%d]\n", max_corr, *lag);
+	}
+	// printf("max xcorr[%.0f] sample[%d]\n", max_corr, *lag);
 
 	free(ffti_cfg);
 	free(fft_cfg);
@@ -154,74 +153,24 @@ float do_kissfft_xcorr (int nfft, char *fn, char *fn_ref, int *lag) {
 
 
 
-int main(void) {
-	printf("\nresults:\n\n");
-	char *reference_fn = "files/reference.raw";
-	char *degraded_fn = "files/degraded_lag100ms.raw";
+int main(int argc, char** argv) {
+
+	if (argc != 3) {
+		printf("Usage: %p <file1> <file2>\n", argv[1]);
+		return 1;
+	}
+
+	char *reference_fn = argv[1];
+	char *degraded_fn = argv[2];
 	int lag = 0;
 	int sampling_rate = 8000;
 	float auto_corr, auto_corr_1, auto_corr_2, cross_corr;
-//	int nfft = 8192;
-//	int nfft = 16384;
-	int nfft = 32768;
+	int nfft = 327680;
 	auto_corr = do_kissfft_xcorr(nfft, reference_fn, reference_fn, &lag);
 	cross_corr = do_kissfft_xcorr(nfft, degraded_fn, reference_fn, &lag);
-	printf("coefficient correlation[%dms][%.0f/%.0f]: %.4f\n\n", (nfft-lag)/(sampling_rate/1000), cross_corr, auto_corr, cross_corr/auto_corr);
+	printf("lag %dms  coefficient[%.0f/%.0f]: %.4f\n\n", (nfft-lag)/(sampling_rate/1000), cross_corr, auto_corr, cross_corr/auto_corr);
 
-//	nfft = 32768;
-	nfft = 16384;
-	nfft = 8192;
-	reference_fn = "files/kamailio_ref.raw";
-	degraded_fn = "files/kamailio_1.raw";
-	auto_corr_1 = do_kissfft_xcorr(nfft, degraded_fn, degraded_fn, &lag);
-	auto_corr_2 = do_kissfft_xcorr(nfft, reference_fn, reference_fn, &lag);
-	auto_corr = sqrt(auto_corr_1 * auto_corr_2);
-	cross_corr = do_kissfft_xcorr(nfft, degraded_fn, reference_fn, &lag);
-	printf("coefficient correlation[%dms][%.0f/%.0f]: %.4f\n\n", (nfft-lag)/(sampling_rate/1000), cross_corr, auto_corr, cross_corr/auto_corr);
-
-	nfft = 8192;
-	reference_fn = "files/10_1.raw";
-	degraded_fn = "files/10_2.raw";
-	auto_corr_1 = do_kissfft_xcorr(nfft, degraded_fn, degraded_fn, &lag);
-	auto_corr_2 = do_kissfft_xcorr(nfft, reference_fn, reference_fn, &lag);
-	auto_corr = sqrt(auto_corr_1 * auto_corr_2);
-	cross_corr = do_kissfft_xcorr(nfft, degraded_fn, reference_fn, &lag);
-	printf("coefficient correlation[%dms][%.0f/%.0f]: %.4f\n\n", (nfft-lag)/(sampling_rate/1000), cross_corr, auto_corr, cross_corr/auto_corr);
-
-	nfft = 8192;
-	reference_fn = "files/10_1.raw";
-	degraded_fn = "files/dd_2.raw";
-	auto_corr_1 = do_kissfft_xcorr(nfft, degraded_fn, degraded_fn, &lag);
-	auto_corr_2 = do_kissfft_xcorr(nfft, reference_fn, reference_fn, &lag);
-	auto_corr = sqrt(auto_corr_1 * auto_corr_2);
-	cross_corr = do_kissfft_xcorr(nfft, degraded_fn, reference_fn, &lag);
-	printf("coefficient correlation[%dms][%.0f/%.0f]: %.4f\n\n", (nfft-lag)/(sampling_rate/1000), cross_corr, auto_corr, cross_corr/auto_corr);
-
-	nfft = 8192;
-	nfft = 16384;
-	nfft = 32768;
-//	nfft = 65536;
-	sampling_rate = 16000;
-	reference_fn = "files/dd_1.raw";
-	degraded_fn = "files/dd_2.raw";
-	auto_corr_1 = do_kissfft_xcorr(nfft, degraded_fn, degraded_fn, &lag);
-	auto_corr_2 = do_kissfft_xcorr(nfft, reference_fn, reference_fn, &lag);
-	auto_corr = sqrt(auto_corr_1 * auto_corr_2);
-	cross_corr = do_kissfft_xcorr(nfft, degraded_fn, reference_fn, &lag);
-	printf("coefficient correlation[%dms][%.0f/%.0f]: %.4f\n\n", (nfft-lag)/(sampling_rate/1000), cross_corr, auto_corr, cross_corr/auto_corr);
-
-	nfft = 16384;
-	nfft = 32768;
-	nfft = 65536;
-	sampling_rate = 16000;
-	reference_fn = "files/123_1.raw";
-	degraded_fn = "files/123_2.raw";
-	auto_corr_1 = do_kissfft_xcorr(nfft, degraded_fn, degraded_fn, &lag);
-	auto_corr_2 = do_kissfft_xcorr(nfft, reference_fn, reference_fn, &lag);
-	auto_corr = sqrt(auto_corr_1 * auto_corr_2);
-	cross_corr = do_kissfft_xcorr(nfft, degraded_fn, reference_fn, &lag);
-	printf("coefficient correlation[%dms][%.0f/%.0f]: %.4f\n\n", (nfft-lag)/(sampling_rate/1000), cross_corr, auto_corr, cross_corr/auto_corr);
-	return 1;
+	return 0;
 }
 
 
